@@ -1,0 +1,14 @@
+# Fix MIME types for JS/CSS - prevents "text/plain" error and blank screen
+# Hostinger Apache may serve these with wrong MIME type otherwise
+<IfModule mod_mime.c>
+  AddType application/javascript js mjs
+  AddType text/css css
+  AddType application/json json
+</IfModule>
+
+# Route all requests to Node.js app when using Hostinger Node.js
+# (Uncomment if Apache is in front and should proxy to Node)
+# RewriteEngine On
+# RewriteCond %{REQUEST_FILENAME} !-f
+# RewriteCond %{REQUEST_FILENAME} !-d
+# RewriteRule ^(.*)$ http://127.0.0.1:${PORT}/$1 [P,L]

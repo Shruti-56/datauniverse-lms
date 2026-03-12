@@ -1,0 +1,736 @@
+// Prisma Schema for DataUniverse E-Learning Platform
+// Database: MySQL
+
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "library"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum UserRole {
+  STUDENT
+  ADMIN
+  INSTRUCTOR
+}
+
+enum SubmissionStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  RESUBMIT
+}
+
+enum CourseLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum CourseCategory {
+  DATA_ANALYTICS
+  DATA_ENGINEERING
+  DATA_SCIENCE
+}
+
+enum PurchaseStatus {
+  PENDING
+  COMPLETED
+  REFUNDED
+}
+
+enum EnrollmentSource {
+  PURCHASE
+  FREE
+  ADMIN_GRANTED
+}
+
+enum InterviewStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  MISSED
+}
+
+enum CertificateStatus {
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+}
+
+// Landing page lead payment status (ads campaign)
+enum LandingLeadPaymentStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+// ============================================
+// MODELS
+// ============================================
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  passwordHash  String   @map("password_hash")
+  role          UserRole @default(STUDENT)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  profile        Profile?
+  enrollments    Enrollment[]
+  purchases      Purchase[]
+  videoProgress  VideoProgress[]
+  coursesCreated Course[] @relation("CourseCreator")
+  screenTime     ScreenTime[]
+  passwordResets PasswordReset[]
+  
+  // Instructor relations
+  submissionsToReview Submission[] @relation("SubmissionReviewer")
+  assignedStudents    StudentInstructor[] @relation("StudentInstructor")
+  interviews          Interview[] @relation("InterviewInstructor")
+  
+  // Student submissions
+  submissions    Submission[] @relation("SubmissionStudent")
+  studentInstructor StudentInstructor[] @relation("StudentInstructorStudent")
+  interviewsAsStudent Interview[] @relation("InterviewStudent")
+
+  // Live lectures (as student in batch, or as instructor)
+  liveLectureBatches     LiveLectureBatchStudent[]
+  liveLectureAttendances LiveLectureAttendance[]
+  liveLecturesAsInstructor LiveLecture[] @relation("LiveLectureInstructor")
+  liveLectureModulesAsInstructor LiveLectureModule[] @relation("LiveLectureModuleInstructor")
+
+  // Fees (cash-only, admin-managed)
+  feesRecord   StudentFees?
+  feesPayments FeesPayment[]
+
+  // Notices (admin creates; shown on student dashboard)
+  noticesCreated     StudentNotice[] @relation("NoticeCreator")
+  noticesForMe       StudentNotice[] @relation("NoticeRecipient")
+  noticeRecipients   StudentNoticeRecipient[]
+  noticeAcks         StudentNoticeAck[]
+  studentFeedback   StudentFeedback[]
+  certificates      CourseCertificate[] @relation("CertificateRecipient")
+  certificatesApproved CourseCertificate[] @relation("CertificateApprover")
+
+  @@map("users")
+}
+
+
+model Profile {
+  id              String    @id @default(uuid())
+  userId          String    @unique @map("user_id")
+  fullName        String    @map("full_name")
+  firstName       String?   @map("first_name")
+  lastName        String?   @map("last_name")
+  avatarUrl       String?   @map("avatar_url")
+  bio             String?   @db.Text
+  isBlocked       Boolean   @default(false) @map("is_blocked")
+  phoneNumber     String?   @map("phone_number")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("profiles")
+}
+
+model Course {
+  id            String         @id @default(uuid())
+  title         String
+  description   String?        @db.Text
+  category      CourseCategory
+  level         CourseLevel    @default(BEGINNER)
+  price         Decimal        @default(0) @db.Decimal(10, 2)
+  thumbnailUrl  String?        @map("thumbnail_url")
+  isVisible     Boolean        @default(true) @map("is_visible")
+  durationHours Int            @default(0) @map("duration_hours")
+  createdById   String?        @map("created_by")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+
+  createdBy    User?         @relation("CourseCreator", fields: [createdById], references: [id])
+  modules      Module[]
+  videos       Video[]      // Videos directly on course (no module)
+  enrollments  Enrollment[]
+  purchases    Purchase[]
+  certificates CourseCertificate[]
+
+  @@map("courses")
+}
+
+model Module {
+  id          String   @id @default(uuid())
+  courseId    String   @map("course_id")
+  title       String
+  description String?  @db.Text
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  course  Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  videos  Video[]
+  project Project?
+
+  @@map("modules")
+}
+
+model Video {
+  id              String   @id @default(uuid())
+  courseId        String   @map("course_id")
+  moduleId        String?  @map("module_id")  // Optional: legacy modules; new videos use courseId only
+  title           String
+  description     String?  @db.Text
+  videoUrl        String?  @map("video_url")
+  durationMinutes Int      @default(0) @map("duration_minutes")
+  sortOrder       Int      @default(0) @map("sort_order")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  course  Course?         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  module  Module?         @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  progress    VideoProgress[]
+  assignments Assignment[]
+
+  @@map("videos")
+}
+
+model Enrollment {
+  id          String          @id @default(uuid())
+  userId      String          @map("user_id")
+  courseId    String          @map("course_id")
+  source      EnrollmentSource @default(PURCHASE)
+  enrolledAt  DateTime        @default(now()) @map("enrolled_at")
+  completedAt DateTime?       @map("completed_at")
+  grantedBy   String?         @map("granted_by") // Admin user ID if admin-granted
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+  @@map("enrollments")
+}
+
+model CourseCertificate {
+  id                String            @id @default(uuid())
+  userId             String            @map("user_id")
+  courseId          String            @map("course_id")
+  status            CertificateStatus  @default(PENDING_APPROVAL)
+  certificateNumber String            @unique @map("certificate_number") // e.g. CERT-2026-00001
+  approvedAt        DateTime?         @map("approved_at")
+  approvedById      String?           @map("approved_by")
+  rejectedAt        DateTime?         @map("rejected_at")
+  createdAt         DateTime          @default(now()) @map("created_at")
+
+  user      User   @relation("CertificateRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  course    Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  approvedBy User? @relation("CertificateApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@unique([userId, courseId])
+  @@map("course_certificates")
+}
+
+model Purchase {
+  id              String         @id @default(uuid())
+  userId          String         @map("user_id")
+  courseId        String         @map("course_id")
+  amount          Decimal        @db.Decimal(10, 2)
+  status          PurchaseStatus @default(PENDING)
+  paymentProvider String?        @map("payment_provider")
+  paymentId       String?        @map("payment_id")
+  purchasedAt     DateTime       @default(now()) @map("purchased_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("purchases")
+}
+
+model VideoProgress {
+  id               String    @id @default(uuid())
+  userId           String    @map("user_id")
+  videoId          String    @map("video_id")
+  isCompleted      Boolean   @default(false) @map("is_completed")
+  watchTimeSeconds Int       @default(0) @map("watch_time_seconds")
+  lastWatchedAt    DateTime  @default(now()) @map("last_watched_at")
+  completedAt      DateTime? @map("completed_at")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, videoId])
+  @@map("video_progress")
+}
+
+// Screen time tracking for students
+model ScreenTime {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  date        DateTime @db.Date
+  totalSeconds Int     @default(0) @map("total_seconds")
+  lastPing    DateTime @default(now()) @map("last_ping")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([date])
+  @@map("screen_time")
+}
+
+// Password reset tokens
+model PasswordReset {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@map("password_resets")
+}
+
+// Assignment (attached to a video/lecture) - multiple per video
+model Assignment {
+  id           String   @id @default(uuid())
+  videoId      String   @map("video_id")
+  title        String
+  description  String   @db.Text
+  instructions String?  @db.Text
+  maxScore     Int      @default(100) @map("max_score")
+  dueInDays    Int?     @map("due_in_days") // Days after enrollment
+  isRequired   Boolean  @default(true) @map("is_required")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  video       Video        @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  submissions Submission[]
+
+  @@map("assignments")
+}
+
+// Project (attached to a module)
+model Project {
+  id           String   @id @default(uuid())
+  moduleId     String   @unique @map("module_id")
+  title        String
+  description  String   @db.Text
+  instructions String?  @db.Text
+  maxScore     Int      @default(100) @map("max_score")
+  dueInDays    Int?     @map("due_in_days")
+  isRequired   Boolean  @default(true) @map("is_required")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  module      Module       @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  submissions Submission[]
+
+  @@map("projects")
+}
+
+// Student-Instructor Assignment (Many-to-Many)
+model StudentInstructor {
+  id           String   @id @default(uuid())
+  studentId    String   @map("student_id")
+  instructorId String   @map("instructor_id")
+  assignedAt   DateTime @default(now()) @map("assigned_at")
+  assignedBy   String?  @map("assigned_by") // Admin user ID
+
+  student    User @relation("StudentInstructorStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  instructor User @relation("StudentInstructor", fields: [instructorId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, instructorId])
+  @@map("student_instructors")
+}
+
+// Alumni Feedback Videos
+model AlumniVideo {
+  id          String   @id @default(uuid())
+  title       String
+  description String?  @db.Text
+  videoUrl    String   @map("video_url") // S3 key
+  studentName String?  @map("student_name")
+  studentRole String?  @map("student_role")
+  company     String?
+  rating      Int?     // 1-5 stars
+  isVisible   Boolean  @default(true) @map("is_visible")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("alumni_videos")
+}
+
+// Policy Documents
+model PolicyDocument {
+  id          String   @id @default(uuid())
+  type        String   // "PRIVACY", "REFUND", "TERMS"
+  title       String
+  pdfUrl      String   @map("pdf_url") // S3 key
+  version     String   @default("1.0")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("policy_documents")
+}
+
+// Mock Interview
+model Interview {
+  id              String          @id @default(uuid())
+  studentId       String          @map("student_id")
+  instructorId    String          @map("instructor_id")
+  scheduledAt     DateTime        @map("scheduled_at")
+  durationMinutes Int             @default(60) @map("duration_minutes")
+  meetingLink     String?         @map("meeting_link")
+  status          InterviewStatus  @default(SCHEDULED)
+  attended        Boolean         @default(false)
+  attendedAt      DateTime?       @map("attended_at")
+  recordingUrl    String?         @map("recording_url") // S3 key
+  notes           String?         @db.Text
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  student    User            @relation("InterviewStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  instructor User            @relation("InterviewInstructor", fields: [instructorId], references: [id], onDelete: Cascade)
+  feedback   InterviewFeedback?
+
+  @@map("interviews")
+}
+
+// Interview Feedback/Ratings
+model InterviewFeedback {
+  id                    String   @id @default(uuid())
+  interviewId           String   @unique @map("interview_id")
+  communicationSkills   Int      @map("communication_skills") // 1-10
+  theoryKnowledge       Int      @map("theory_knowledge") // 1-10
+  practicalKnowledge    Int      @map("practical_knowledge") // 1-10
+  codingKnowledge       Int      @map("coding_knowledge") // 1-10
+  problemSolving        Int      @map("problem_solving") // 1-10
+  overallRating         Int      @map("overall_rating") // 1-10
+  strengths             String?  @db.Text
+  areasForImprovement   String?  @map("areas_for_improvement") @db.Text
+  additionalComments    String?  @map("additional_comments") @db.Text
+  submittedAt           DateTime @default(now()) @map("submitted_at")
+
+  interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+
+  @@map("interview_feedback")
+}
+
+// ============================================
+// LIVE LECTURES
+// ============================================
+
+// Only REGULAR is used: students in a live batch attend live and get recordings; others use course videos.
+enum LiveLectureBatchType {
+  REGULAR
+  FAST_FORWARD  // Legacy; not used
+  PAP           // Legacy; not used
+}
+
+// Batch/category for students (admin assigns students to batches)
+model LiveLectureBatch {
+  id          String   @id @default(uuid())
+  name        String
+  description String?  @db.Text
+  type        LiveLectureBatchType @default(REGULAR) @map("type")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  students LiveLectureBatchStudent[]
+  lectures LiveLecture[]
+  modules  LiveLectureModule[]
+
+  @@map("live_lecture_batches")
+}
+
+// Module within a batch (MySQL, Python, PySpark, AWS, PowerBI etc.) - runs same time each day for a date range
+model LiveLectureModule {
+  id                  String    @id @default(uuid())
+  batchId             String    @map("batch_id")
+  name                String    // e.g. MySQL, Python, PySpark, AWS, PowerBI
+  instructorId        String    @map("instructor_id")
+  meetingLink         String?   @map("meeting_link")
+  startDate           DateTime  @db.Date @map("start_date")
+  endDate             DateTime  @db.Date @map("end_date")
+  lectureTime         String    @map("lecture_time") // "HH:mm" e.g. "10:00"
+  lastReminderSentAt  DateTime? @map("last_reminder_sent_at") // last time we sent 10-min-before email
+  lastReminder1hSentAt   DateTime? @map("last_reminder_1h_sent_at") // last time we sent 1-hour-before email
+  lastReminder30mSentAt  DateTime? @map("last_reminder_30m_sent_at") // last time we sent 30-min-before email
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  batch      LiveLectureBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  instructor User             @relation("LiveLectureModuleInstructor", fields: [instructorId], references: [id], onDelete: Cascade)
+  lectures   LiveLecture[]    // one lecture per day for attendance & recording
+
+  @@map("live_lecture_modules")
+}
+
+// Students registered in a live lecture batch (admin adds/removes)
+model LiveLectureBatchStudent {
+  id        String   @id @default(uuid())
+  batchId   String   @map("batch_id")
+  studentId String   @map("student_id")
+  addedBy   String?  @map("added_by") // Admin user ID
+  addedAt   DateTime @default(now()) @map("added_at")
+
+  batch  LiveLectureBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  student User @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([batchId, studentId])
+  @@map("live_lecture_batch_students")
+}
+
+// Scheduled live lecture (one-off or one day of a recurring module; attendance & recording)
+model LiveLecture {
+  id               String    @id @default(uuid())
+  batchId          String    @map("batch_id")
+  instructorId     String    @map("instructor_id")
+  moduleId         String?   @map("module_id") // set when created from a recurring module
+  title            String
+  meetingLink      String?   @map("meeting_link")
+  scheduledAt      DateTime  @map("scheduled_at")
+  durationMinutes  Int       @default(60) @map("duration_minutes")
+  recordingUrl     String?   @map("recording_url") // S3 key
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  batch       LiveLectureBatch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  instructor  User               @relation("LiveLectureInstructor", fields: [instructorId], references: [id], onDelete: Cascade)
+  module      LiveLectureModule? @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  attendances LiveLectureAttendance[]
+
+  @@map("live_lectures")
+}
+
+// Attendance for a student in a live lecture (admin/instructor marks)
+model LiveLectureAttendance {
+  id         String   @id @default(uuid())
+  lectureId  String   @map("lecture_id")
+  studentId  String   @map("student_id")
+  attended   Boolean  @default(false)
+  markedAt   DateTime @default(now()) @map("marked_at")
+  markedBy   String?  @map("marked_by") // Admin/Instructor user ID
+
+  lecture LiveLecture @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+  student User        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([lectureId, studentId])
+  @@map("live_lecture_attendances")
+}
+
+// ============================================
+// FEES MANAGEMENT (Cash only, no payment gateway)
+// ============================================
+
+// Total fees set per student (admin)
+model StudentFees {
+  id           String   @id @default(uuid())
+  studentId    String   @unique @map("student_id")
+  totalAmount  Decimal  @db.Decimal(10, 2) @map("total_amount")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  student User @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@map("student_fees")
+}
+
+// Cash payment record (admin records each payment)
+model FeesPayment {
+  id         String   @id @default(uuid())
+  studentId  String   @map("student_id")
+  amount     Decimal  @db.Decimal(10, 2)
+  method     String   @default("CASH") @map("method") // CASH only
+  note       String?  @db.Text
+  paidAt     DateTime @default(now()) @map("paid_at")
+  recordedBy String?  @map("recorded_by") // Admin user ID
+
+  student User @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@map("fees_payments")
+}
+
+// Submission (for both assignments and projects)
+model Submission {
+  id           String           @id @default(uuid())
+  studentId    String           @map("student_id")
+  assignmentId String?          @map("assignment_id")
+  projectId    String?          @map("project_id")
+  content      String?          @db.Text // Text submission
+  fileUrl      String?          @map("file_url") // File submission (S3)
+  fileName     String?          @map("file_name")
+  status       SubmissionStatus @default(PENDING)
+  score        Int?
+  feedback     String?          @db.Text
+  reviewerId   String?          @map("reviewer_id")
+  submittedAt  DateTime         @default(now()) @map("submitted_at")
+  reviewedAt   DateTime?        @map("reviewed_at")
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+
+  student    User        @relation("SubmissionStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  assignment Assignment? @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  project    Project?    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  reviewer   User?       @relation("SubmissionReviewer", fields: [reviewerId], references: [id])
+
+  @@index([reviewerId, status])
+  @@map("submissions")
+}
+
+// Notice / notification / news shown on a student's dashboard (admin creates)
+model StudentNotice {
+  id        String    @id @default(uuid())
+  title     String    @db.VarChar(500)
+  body      String    @db.Text
+  studentId String?   @map("student_id") // legacy: single student; null when using recipients
+  createdBy String    @map("created_by") // admin user id
+  createdAt DateTime @default(now()) @map("created_at")
+  expiresAt DateTime? @map("expires_at") // optional: hide after this date
+
+  creator    User   @relation("NoticeCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+  student    User?  @relation("NoticeRecipient", fields: [studentId], references: [id], onDelete: Cascade)
+  recipients StudentNoticeRecipient[] // when empty = all students; when non-empty = only these students
+  acks       StudentNoticeAck[]
+
+  @@map("student_notices")
+}
+
+// Many-to-many: notice targeted to specific students (and/or students from selected batches)
+model StudentNoticeRecipient {
+  id       String @id @default(uuid())
+  noticeId String @map("notice_id")
+  studentId String @map("student_id")
+
+  notice  StudentNotice @relation(fields: [noticeId], references: [id], onDelete: Cascade)
+  student User           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([noticeId, studentId])
+  @@map("student_notice_recipients")
+}
+
+// Student acknowledged a notice: dismissed (close) or remind later
+model StudentNoticeAck {
+  id               String    @id @default(uuid())
+  noticeId         String    @map("notice_id")
+  studentId        String    @map("student_id")
+  action           String    @db.VarChar(20) // DISMISSED | REMIND_LATER
+  remindLaterUntil DateTime? @map("remind_later_until") // when to show again (for REMIND_LATER)
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  notice  StudentNotice @relation(fields: [noticeId], references: [id], onDelete: Cascade)
+  student User          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([noticeId, studentId])
+  @@map("student_notice_acks")
+}
+
+// Student feedback to institute (platform, courses, experience)
+model StudentFeedback {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  category  String?  @db.VarChar(50)   // e.g. General, Course, Platform, Support
+  message   String   @db.Text
+  rating    Int?     // 1-5 optional
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("student_feedback")
+}
+
+// ============================================
+// PROMO BANNERS (Student dashboard carousel – admin managed)
+// ============================================
+
+model PromoBanner {
+  id         String   @id @default(uuid())
+  title      String   @db.VarChar(255)
+  subtitle   String?  @db.Text
+  badge      String?  @db.VarChar(100)   // e.g. "Coming Soon", "Limited Time"
+  ctaText    String   @default("Explore") @map("cta_text") @db.VarChar(100)
+  ctaLink    String   @default("/student/marketplace") @map("cta_link") @db.VarChar(500)
+  gradient   String   @db.VarChar(200)   // Tailwind classes e.g. "from-violet-600 via-purple-600 to-indigo-700"
+  sortOrder  Int      @default(0) @map("sort_order")
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("promo_banners")
+}
+
+// ============================================
+// LANDING PAGE ANALYTICS (Ads campaign tracking)
+// ============================================
+
+model LandingPageVisit {
+  id          String   @id @default(uuid())
+  pageSlug    String   @map("page_slug")   // e.g. "working-professionals"
+  visitedAt   DateTime @default(now()) @map("visited_at")
+  referrer    String?  @db.VarChar(1000)
+  userAgent   String?  @map("user_agent")  @db.Text
+  utmSource   String?  @map("utm_source")  @db.VarChar(255)
+  utmMedium   String?  @map("utm_medium")  @db.VarChar(255)
+  utmCampaign String?  @map("utm_campaign") @db.VarChar(255)
+  utmContent  String?  @map("utm_content") @db.VarChar(255)
+  utmTerm     String?  @map("utm_term")    @db.VarChar(255)
+  visitorIp   String?  @map("visitor_ip")  @db.VarChar(45)  // IPv4 or IPv6
+
+  @@index([pageSlug, visitedAt])
+  @@index([utmSource, utmCampaign])
+  @@map("landing_page_visits")
+}
+
+model LandingLead {
+  id              String                  @id @default(uuid())
+  pageSlug         String                  @map("page_slug") // e.g. "working-professionals"
+  name             String                  @db.VarChar(255)
+  email            String                  @db.VarChar(255)
+  phone            String                  @db.VarChar(32)
+  createdAt        DateTime                @default(now()) @map("created_at")
+  paymentStatus    LandingLeadPaymentStatus @default(PENDING) @map("payment_status")
+  stripeSessionId  String?                 @map("stripe_session_id") @db.VarChar(255)
+  stripePaymentId  String?                 @map("stripe_payment_id") @db.VarChar(255)
+  amountInr        Int                     @default(99) @map("amount_inr")
+  currency         String                  @default("INR") @db.VarChar(10)
+
+  referrer         String?                 @db.VarChar(1000)
+  utmSource        String?                 @map("utm_source")  @db.VarChar(255)
+  utmMedium        String?                 @map("utm_medium")  @db.VarChar(255)
+  utmCampaign      String?                 @map("utm_campaign") @db.VarChar(255)
+  utmContent       String?                 @map("utm_content") @db.VarChar(255)
+  utmTerm          String?                 @map("utm_term")    @db.VarChar(255)
+  visitorIp        String?                 @map("visitor_ip")  @db.VarChar(45)
+
+  @@index([pageSlug, createdAt])
+  @@index([paymentStatus, createdAt])
+  @@map("landing_leads")
+}
+
+// Editable landing page config (per pageSlug) – used for workshop details, etc.
+model LandingPageConfig {
+  id         String   @id @default(uuid())
+  pageSlug   String   @unique @map("page_slug")
+  dateLabel  String?  @map("date_label") @db.VarChar(255)
+  timeLabel  String?  @map("time_label") @db.VarChar(255)
+  modeLabel  String?  @map("mode_label") @db.VarChar(255)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("landing_page_configs")
+}

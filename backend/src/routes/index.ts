@@ -1,0 +1,51 @@
+import { Router } from 'express';
+import authRoutes from './auth.routes';
+import courseRoutes from './course.routes';
+import enrollmentRoutes from './enrollment.routes';
+import progressRoutes from './progress.routes';
+import userRoutes from './user.routes';
+import adminRoutes from './admin.routes';
+import screenTimeRoutes from './screentime.routes';
+import paymentRoutes from './payment.routes';
+import assignmentRoutes from './assignment.routes';
+import projectRoutes from './project.routes';
+import submissionRoutes from './submission.routes';
+import studentInstructorRoutes from './student-instructor.routes';
+import alumniRoutes from './alumni.routes';
+import policyRoutes from './policy.routes';
+import interviewRoutes from './interview.routes';
+import liveLectureRoutes from './live-lecture.routes';
+import feesRoutes from './fees.routes';
+import noticesRoutes from './notices.routes';
+import promoBannerRoutes from './promoBanner.routes';
+import feedbackRoutes from './feedback.routes';
+import certificateRoutes from './certificate.routes';
+import landingAnalyticsRoutes from './landingAnalytics.routes';
+
+const router = Router();
+
+// Mount route modules
+router.use('/auth', authRoutes);
+router.use('/courses', courseRoutes);
+router.use('/enrollments', enrollmentRoutes);
+router.use('/progress', progressRoutes);
+router.use('/users', userRoutes);
+router.use('/admin', adminRoutes);
+router.use('/screentime', screenTimeRoutes);
+router.use('/payments', paymentRoutes);
+router.use('/assignments', assignmentRoutes);
+router.use('/projects', projectRoutes);
+router.use('/submissions', submissionRoutes);
+router.use('/student-instructors', studentInstructorRoutes);
+router.use('/alumni', alumniRoutes);
+router.use('/policies', policyRoutes);
+router.use('/interviews', interviewRoutes);
+router.use('/live-lectures', liveLectureRoutes);
+router.use('/fees', feesRoutes);
+router.use('/notices', noticesRoutes);
+router.use('/promo-banners', promoBannerRoutes);
+router.use('/feedback', feedbackRoutes);
+router.use('/certificates', certificateRoutes);
+router.use('/landing-analytics', landingAnalyticsRoutes);
+
+export default router;
